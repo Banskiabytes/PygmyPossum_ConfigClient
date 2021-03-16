@@ -9,4 +9,4 @@ python __main__.py
 
 in main directory.
 
-![gui example](https://github.com/Banskiabytes/PygmyPossum_ConfigClient/gui.png "gui example")
+![gui example](https://github.com/Banskiabytes/PygmyPossum_ConfigClient/blob/master/gui.png "gui example")
