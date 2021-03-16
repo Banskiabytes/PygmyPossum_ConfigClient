@@ -27,6 +27,7 @@ def main():
     function_getAllUsrProgs    = FunctionItem("Read all user programs", configclient.getUsrInput, args=PYPO_GETUSRPROG_ALL)   
     function_setUsrProg        = FunctionItem("Edit user program", configclient.getUsrInput, args=PYPO_GETUSRPROG_ONE)
     function_getDipSwitches    = FunctionItem("Get dip switches", configclient.getDipSwitches)
+    function_getBattVoltage    = FunctionItem("Get battery voltage", configclient.getBattVoltage)
     function_getSerialPorts    = FunctionItem("Get serial ports", configclient.getSerialPorts)
     function_setDeviceDefaults = FunctionItem("Set device defaults", configclient.setDefaultValues)
 
@@ -34,6 +35,7 @@ def main():
     menu.append_item(function_getAllUsrProgs)
     menu.append_item(function_setUsrProg)
     menu.append_item(function_getDipSwitches)
+    menu.append_item(function_getBattVoltage)
     menu.append_item(function_getSerialPorts)
     menu.append_item(function_setDeviceDefaults)
 

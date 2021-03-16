@@ -3,15 +3,17 @@ import os
 import tkinter as tk
 from tkinter import filedialog
 from pygmypossum import PygmyPossum
+import codecs
+import serial
 
-SERIAL_PORT_NAME = 'COM9'  # TODO add means to change this from menu
+SERIAL_PORT_NAME = 'COM6'  # TODO add means to change this from menu
 COLUMN_WIDTH = 12
 RETRN_TO_MENU = "press 'Enter' to return to main menu.."    
 
 def getUsrInput(selection):
 
     # connect to the device
-    pypo = PygmyPossum("COM9")
+    pypo = PygmyPossum(SERIAL_PORT_NAME)
     
     if selection == "SINGLE":
         while True:
@@ -34,7 +36,7 @@ def getUsrInput(selection):
         try:
             y = input(RETRN_TO_MENU)
             if(y == 'E'):
-                editUsrProg(usrProg)
+                editUsrProg(usrProgID)
         except SyntaxError:
             y = None
 
@@ -52,15 +54,34 @@ def getUsrInput(selection):
         except SyntaxError:
             y = None
 
+###########################################
+# save usr program to csv
+###########################################
 def saveUsrProg():
     root = tk.Tk()
     root.withdraw()
-    f = filedialog.asksaveasfile(mode='w', defaultextension=".txt")
+
+    f = filedialog.asksaveasfile(mode='w', initialfile="pygmypossum.config.csv", filetypes = (("CSV files","*.csv"),("all files","*.*")))
     if f is None: # asksaveasfile return `None` if dialog closed with "cancel".
         return
-    text2save = str("text.get(1.0, END)") # starts from `1.0`, not `0.0`
+
+    text2save = "ID,NUM_OF_SNAPS,SNAP_PERIOD_(ms),MIN_EVENT_PERIOD_(s)\n"
     f.write(text2save)
+
+    # connect to the device
+    pypo = PygmyPossum(SERIAL_PORT_NAME)
+
+    for x in range(16):
+        userProg = pypo.getUsrProg(x) # grap a UserProg object
+        text2save = str("{},{},{},{}\n".format(x,
+                                userProg.numOfSnaps,
+                                userProg.snapPeriod,
+                                userProg.minEventPeriod)) # starts from `1.0`, not `0.0`
+        f.write(text2save)
     f.close()
+
+def printLinuxQuestion():
+    print("Do you want to continue? [Y/n]")
 
 ###########################################
 # print a formatted header
@@ -74,15 +95,53 @@ def printUsrProgHeader():
 ###########################################
 # make changes to a user program
 ###########################################
-def editUsrProg(usrProg):
-    curNumOfSnaps = getUserProg(usrProg)[4]
-    curSnapPeriod = getUserProg(usrProg)[6] << 8 | getUserProg(usrProg)[5]
-    curMinEventPeriod = getUserProg(usrProg)[7]
+def editUsrProg(usrProgID):
+    pypo = PygmyPossum(SERIAL_PORT_NAME) # connect to device
 
-    print("You are making changes to usrProg: {}".format(usrProg))
-    input("Enter value for numOfSnaps, current value is: {}, new value: ".format(curNumOfSnaps))
-    input("Enter value for snapPeriod, current value is: {}ms, new value (ms): ".format(curSnapPeriod))
-    input("Enter value for minEventPeriod, current value is: {}s, new value (s): ".format(curMinEventPeriod))
+    curNumOfSnaps = pypo.getUsrProg(usrProgID).numOfSnaps
+    curSnapPeriod = pypo.getUsrProg(usrProgID).snapPeriod
+    curMinEventPeriod = pypo.getUsrProg(usrProgID).minEventPeriod
+
+    print("You are making changes to usrProg: {}".format(usrProgID))
+    newNumOfSnaps = int(input("Enter value for numOfSnaps, current value is: {}, new value: ".format(curNumOfSnaps)))
+    newSnapPeriod = int(input("Enter value for snapPeriod, current value is: {}ms, new value (ms): ".format(curSnapPeriod)))
+    newMinEventPeriod = int(input("Enter value for minEventPeriod, current value is: {}s, new value (s): ".format(curMinEventPeriod)))
+
+    # convert the integers (variable width) to bytes
+    newSnapPeriodMSB,newSnapPeriodLSB = newSnapPeriod.to_bytes(2, 'big')
+
+    # build the packet to send to device
+    # shuold put this in some sort of loop to clean up the escape chars
+    packet = bytearray()
+    packet.append(0x50)                   # start frame byte
+    packet.append(0x42)                   # 'B'
+    packet.append(0x7D)                   # Escape Character - send this before a '0x04'
+    packet.append(usrProgID)              # 
+    packet.append(0x7D)                   # Escape Character - send this before a '0x04'
+    packet.append(newNumOfSnaps)          #
+    packet.append(0x7D)                   # Escape Character - send this before a '0x04'
+    packet.append(newSnapPeriodLSB)       # 
+    packet.append(0x7D)                   # Escape Character - send this before a '0x04'
+    packet.append(newSnapPeriodMSB)       # 
+    packet.append(0x7D)                   # Escape Character - send this before a '0x04'
+    packet.append(newMinEventPeriod)      # 
+    packet.append(0xFF)                   # spare
+    packet.append(0xFF)                   # spare
+    packet.append(0xFF)                   # spare
+    packet.append(0x04)                   # end frame byte
+
+    ser = serial.Serial(SERIAL_PORT_NAME, 9600, timeout=None,)
+
+    # grab the data from the MCU
+    ser.write(packet)
+    packet = ser.read(16)
+    ser.close()
+
+    for x in packet:
+        print("{} ".format(hex(x)), end='')
+    print('')
+
+    input("Press Enter to Continue..")
 
 ###########################################
 # Get list of serial ports
@@ -142,6 +201,30 @@ def getDipSwitches():
     print('')
 
     print("Current DIP switch setting is: {}".format(packet[2]))
+    input("Press Enter to Continue..")
+
+###########################################
+# get battery voltage
+###########################################
+def getBattVoltage():
+
+    ser = serial.Serial(SERIAL_PORT_NAME, 9600, timeout=None,)
+
+    packet = bytearray()
+    packet.append(0x50)  # start frame byte
+    packet.append(0x45)  # 'E'
+    packet.append(0x04)  # end frame byte
+
+    # grab the data from the MCU
+    ser.write(packet)
+    packet = ser.read(16)
+    ser.close()
+
+    for x in packet:
+        print("{} ".format(hex(x)), end='')
+    print('')
+
+    print("Current battery voltage is: {} {}".format(packet[2],packet[3]))
     input("Press Enter to Continue..")
 
 ###########################################
